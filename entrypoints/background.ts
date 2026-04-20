@@ -1,13 +1,14 @@
 import { db } from '@/src/db/client';
 import { captureSnapshots } from '@/src/services/capture';
 import { streamChatCompletion, type ToolDescriptor } from '@/src/services/llm';
-import { callMcpTool, listMcpTools } from '@/src/services/mcp';
+import { callMcpTool, getMcpServerStatus, listMcpTools } from '@/src/services/mcp';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '@/src/services/settings';
 import type {
   AppSettings,
   BackgroundToUiMessage,
   BootstrapPayload,
   ChatMessageRecord,
+  McpServerStatus,
   PendingToolApprovalRecord,
   SessionRecord,
   ToolCallRecord,
@@ -19,6 +20,7 @@ import { safeJsonStringify, truncateText } from '@/src/utils/text';
 const ports = new Set<browser.runtime.Port>();
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_RECENT_SNAPSHOTS = 6;
+let mcpStatusCache: McpServerStatus[] = [];
 
 function postToPort(port: browser.runtime.Port, message: BackgroundToUiMessage): void {
   try {
@@ -106,6 +108,35 @@ async function emitPendingApproval(): Promise<void> {
   });
 }
 
+async function refreshMcpStatuses(settings?: AppSettings): Promise<McpServerStatus[]> {
+  const resolvedSettings = settings ?? (await loadSettings());
+  const checkingStatuses = resolvedSettings.mcpServers.map<McpServerStatus>((server) => ({
+    serverId: server.id,
+    serverName: server.name,
+    baseUrl: server.baseUrl,
+    enabled: server.enabled,
+    state: server.enabled && server.baseUrl.trim() ? 'checking' : server.enabled ? 'not-configured' : 'disabled',
+    toolCount: 0,
+    tools: [],
+    lastCheckedAt: nowIso(),
+  }));
+  mcpStatusCache = checkingStatuses;
+  broadcast({
+    type: 'mcp-statuses',
+    statuses: checkingStatuses,
+  });
+
+  const statuses = await Promise.all(
+    resolvedSettings.mcpServers.map((server) => getMcpServerStatus(server)),
+  );
+  mcpStatusCache = statuses;
+  broadcast({
+    type: 'mcp-statuses',
+    statuses,
+  });
+  return statuses;
+}
+
 async function buildBootstrap(selectedSessionId?: string): Promise<BootstrapPayload> {
   const settings = (await loadSettings()) ?? DEFAULT_SETTINGS;
   const sessions = await listSessions();
@@ -120,6 +151,10 @@ async function buildBootstrap(selectedSessionId?: string): Promise<BootstrapPayl
     selectedSessionId: selected,
     settings,
     pendingApproval: await getPendingApproval(),
+    mcpStatuses:
+      mcpStatusCache.length === settings.mcpServers.length
+        ? mcpStatusCache
+        : await refreshMcpStatuses(settings),
   };
 }
 
@@ -410,6 +445,12 @@ async function handleMessage(
     case 'save-settings': {
       const settings = await saveSettings(message.settings);
       broadcast({ type: 'settings-updated', settings });
+      await refreshMcpStatuses(settings);
+      return;
+    }
+
+    case 'refresh-mcp-statuses': {
+      await refreshMcpStatuses();
       return;
     }
 

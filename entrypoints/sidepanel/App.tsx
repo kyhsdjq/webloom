@@ -5,6 +5,7 @@ import type {
   AppSettings,
   BackgroundToUiMessage,
   McpServerConfig,
+  McpServerStatus,
   UiToBackgroundMessage,
 } from '@/src/types/app';
 import { createId } from '@/src/utils/ids';
@@ -22,18 +23,37 @@ function cloneSettings(settings: AppSettings): AppSettings {
   };
 }
 
+function statusLabel(status: McpServerStatus['state']): string {
+  switch (status) {
+    case 'connected':
+      return 'Connected';
+    case 'checking':
+      return 'Checking';
+    case 'disabled':
+      return 'Disabled';
+    case 'not-configured':
+      return 'Not configured';
+    case 'error':
+      return 'Connection failed';
+    default:
+      return status;
+  }
+}
+
 function App() {
   const {
     sessions,
     messages,
     selectedSessionId,
     settings,
+    mcpStatuses,
     pendingApproval,
     errorMessage,
     setSessions,
     setMessages,
     setSelectedSessionId,
     setSettings,
+    setMcpStatuses,
     setPendingApproval,
     setErrorMessage,
   } = useAppStore();
@@ -62,6 +82,7 @@ function App() {
           setMessages(message.payload.messages);
           setSelectedSessionId(message.payload.selectedSessionId);
           setSettings(message.payload.settings);
+          setMcpStatuses(message.payload.mcpStatuses);
           setPendingApproval(message.payload.pendingApproval);
           setErrorMessage(undefined);
           break;
@@ -75,6 +96,9 @@ function App() {
           break;
         case 'settings-updated':
           setSettings(message.settings);
+          break;
+        case 'mcp-statuses':
+          setMcpStatuses(message.statuses);
           break;
         case 'pending-approval':
           setPendingApproval(message.approval);
@@ -97,6 +121,7 @@ function App() {
   }, [
     setErrorMessage,
     setMessages,
+    setMcpStatuses,
     setPendingApproval,
     setSelectedSessionId,
     setSessions,
@@ -141,6 +166,10 @@ function App() {
   function handleSaveSettings() {
     send({ type: 'save-settings', settings: editableSettings });
     setIsSettingsOpen(false);
+  }
+
+  function handleRefreshMcpStatuses() {
+    send({ type: 'refresh-mcp-statuses' });
   }
 
   function handleSend() {
@@ -238,6 +267,65 @@ function App() {
         </header>
 
         {errorMessage ? <div className="banner banner--error">{errorMessage}</div> : null}
+
+        <section className="mcp-status-panel">
+          <div className="mcp-status-panel__header">
+            <div>
+              <h2>MCP Servers</h2>
+              <p>Validate whether each remote MCP tool server is reachable and which tools it exposes.</p>
+            </div>
+            <button onClick={handleRefreshMcpStatuses}>Refresh</button>
+          </div>
+
+          <div className="mcp-status-grid">
+            {mcpStatuses.length ? (
+              mcpStatuses.map((status) => (
+                <article key={status.serverId} className="mcp-status-card">
+                  <div className="mcp-status-card__header">
+                    <div>
+                      <strong>{status.serverName}</strong>
+                      <div className="mcp-status-card__url">{status.baseUrl || 'No URL configured'}</div>
+                    </div>
+                    <span className={`status-pill status-pill--${status.state}`}>
+                      {statusLabel(status.state)}
+                    </span>
+                  </div>
+
+                  <div className="mcp-status-card__meta">
+                    <span>{status.toolCount} tools</span>
+                    {status.lastCheckedAt ? (
+                      <span>{new Date(status.lastCheckedAt).toLocaleTimeString()}</span>
+                    ) : null}
+                  </div>
+
+                  {status.error ? <div className="mcp-status-card__error">{status.error}</div> : null}
+
+                  {status.tools.length ? (
+                    <div className="mcp-tool-list">
+                      {status.tools.map((tool) => (
+                        <div key={`${status.serverId}-${tool.name}`} className="mcp-tool-list__item">
+                          <div className="mcp-tool-list__name">{tool.title || tool.name}</div>
+                          <div className="mcp-tool-list__id">{tool.name}</div>
+                          {tool.description ? (
+                            <div className="mcp-tool-list__description">{tool.description}</div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mcp-tool-list__empty">
+                      {status.state === 'connected'
+                        ? 'Connected, but no tools were returned.'
+                        : 'No tools available to display.'}
+                    </div>
+                  )}
+                </article>
+              ))
+            ) : (
+              <div className="mcp-tool-list__empty">No MCP servers configured yet.</div>
+            )}
+          </div>
+        </section>
 
         <section className="messages">
           {messages.map((message) => (
@@ -364,11 +452,25 @@ function App() {
           <div className="settings__section">
             <div className="settings__section-header">
               <h3>MCP Servers</h3>
-              <button onClick={addServer}>Add</button>
+              <div className="settings__section-actions">
+                <button onClick={handleRefreshMcpStatuses}>Refresh Status</button>
+                <button onClick={addServer}>Add</button>
+              </div>
             </div>
 
             {editableSettings.mcpServers.map((server, index) => (
               <div key={server.id} className="server-card">
+                {(() => {
+                  const status = mcpStatuses.find((item) => item.serverId === server.id);
+                  return status ? (
+                    <div className="server-card__status">
+                      <span className={`status-pill status-pill--${status.state}`}>
+                        {statusLabel(status.state)}
+                      </span>
+                      <span>{status.toolCount} tools</span>
+                    </div>
+                  ) : null;
+                })()}
                 <label>
                   Name
                   <input
@@ -434,6 +536,28 @@ function App() {
                   />
                   Enabled
                 </label>
+                {(() => {
+                  const status = mcpStatuses.find((item) => item.serverId === server.id);
+                  if (!status) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="server-card__tools">
+                      {status.error ? <div className="server-card__error">{status.error}</div> : null}
+                      {status.tools.length ? (
+                        status.tools.map((tool) => (
+                          <div key={`${server.id}-${tool.name}`} className="server-card__tool">
+                            <div className="server-card__tool-name">{tool.title || tool.name}</div>
+                            <div className="server-card__tool-id">{tool.name}</div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="server-card__empty">No tools discovered.</div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <button onClick={() => removeServer(server.id)}>Remove</button>
               </div>
             ))}

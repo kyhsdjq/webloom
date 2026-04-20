@@ -61,6 +61,31 @@ export type McpServerConfig = {
   timeoutMs?: number;
 };
 
+export type McpToolInfo = {
+  name: string;
+  title?: string;
+  description?: string;
+};
+
+export type McpServerStatusState =
+  | 'disabled'
+  | 'not-configured'
+  | 'checking'
+  | 'connected'
+  | 'error';
+
+export type McpServerStatus = {
+  serverId: string;
+  serverName: string;
+  baseUrl: string;
+  enabled: boolean;
+  state: McpServerStatusState;
+  toolCount: number;
+  tools: McpToolInfo[];
+  error?: string;
+  lastCheckedAt?: string;
+};
+
 export type LlmConfig = {
   baseUrl: string;
   apiKey: string;
@@ -93,6 +118,7 @@ export type BootstrapPayload = {
   selectedSessionId: string;
   settings: AppSettings;
   pendingApproval?: PendingToolApprovalRecord;
+  mcpStatuses: McpServerStatus[];
 };
 
 export type BrowserPageSnapshot = {
@@ -110,6 +136,7 @@ export type UiToBackgroundMessage =
   | { type: 'rename-session'; sessionId: string; title: string }
   | { type: 'delete-session'; sessionId: string }
   | { type: 'save-settings'; settings: AppSettings }
+  | { type: 'refresh-mcp-statuses' }
   | { type: 'send-message'; sessionId: string; content: string }
   | { type: 'approve-tool-call'; approvalId: string }
   | { type: 'reject-tool-call'; approvalId: string };
@@ -120,4 +147,5 @@ export type BackgroundToUiMessage =
   | { type: 'messages-updated'; sessionId: string; messages: ChatMessageRecord[] }
   | { type: 'settings-updated'; settings: AppSettings }
   | { type: 'pending-approval'; approval?: PendingToolApprovalRecord }
+  | { type: 'mcp-statuses'; statuses: McpServerStatus[] }
   | { type: 'error'; message: string };
