@@ -17,12 +17,12 @@ import type {
 import { createId, nowIso } from '@/src/utils/ids';
 import { safeJsonStringify, truncateText } from '@/src/utils/text';
 
-const ports = new Set<browser.runtime.Port>();
+const ports = new Set<chrome.runtime.Port>();
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_RECENT_SNAPSHOTS = 6;
 let mcpStatusCache: McpServerStatus[] = [];
 
-function postToPort(port: browser.runtime.Port, message: BackgroundToUiMessage): void {
+function postToPort(port: chrome.runtime.Port, message: BackgroundToUiMessage): void {
   try {
     port.postMessage(message);
   } catch {
@@ -158,7 +158,7 @@ async function buildBootstrap(selectedSessionId?: string): Promise<BootstrapPayl
   };
 }
 
-async function emitBootstrap(port: browser.runtime.Port, selectedSessionId?: string): Promise<void> {
+async function emitBootstrap(port: chrome.runtime.Port, selectedSessionId?: string): Promise<void> {
   postToPort(port, {
     type: 'bootstrap',
     payload: await buildBootstrap(selectedSessionId),
@@ -287,6 +287,7 @@ async function runModelTurn(
         toolName: hydratedToolCalls[0].toolName,
         namespacedName: hydratedToolCalls[0].namespacedName,
         argumentsJson: hydratedToolCalls[0].argumentsJson,
+        status: 'pending',
         createdAt: nowIso(),
       };
 
@@ -359,28 +360,62 @@ async function continueAfterToolApproval(
   await runModelTurn(approval.sessionId, settings, { enableTools: false });
 }
 
+async function markPendingApprovalProcessing(
+  approvalId: string,
+): Promise<PendingToolApprovalRecord | undefined> {
+  return db.transaction('rw', db.pendingApprovals, async () => {
+    const approval = await db.pendingApprovals.get(approvalId);
+    if (!approval || approval.status === 'processing') {
+      return undefined;
+    }
+
+    const processingApproval: PendingToolApprovalRecord = {
+      ...approval,
+      status: 'processing',
+    };
+    await db.pendingApprovals.put(processingApproval);
+    return processingApproval;
+  });
+}
+
+async function restorePendingApproval(approval: PendingToolApprovalRecord): Promise<void> {
+  await db.pendingApprovals.put({
+    ...approval,
+    status: 'pending',
+  });
+  await emitPendingApproval();
+}
+
 async function approveToolCall(approvalId: string): Promise<void> {
-  const approval = await db.pendingApprovals.get(approvalId);
+  const approval = await markPendingApprovalProcessing(approvalId);
+  await emitPendingApproval();
   if (!approval) {
-    throw new Error('Pending tool approval not found.');
+    return;
   }
 
   const settings = await loadSettings();
   const server = settings.mcpServers.find((item) => item.id === approval.serverId);
   if (!server) {
+    await restorePendingApproval(approval);
     throw new Error('MCP server configuration not found.');
   }
 
-  const args = approval.argumentsJson ? JSON.parse(approval.argumentsJson) : {};
-  const toolName = approval.namespacedName.split('__').slice(1).join('__');
-  const result = await callMcpTool(server, toolName, args);
-  await continueAfterToolApproval(approval, safeJsonStringify(result));
+  try {
+    const args = approval.argumentsJson ? JSON.parse(approval.argumentsJson) : {};
+    const toolName = approval.namespacedName.split('__').slice(1).join('__');
+    const result = await callMcpTool(server, toolName, args);
+    await continueAfterToolApproval(approval, safeJsonStringify(result));
+  } catch (error) {
+    await restorePendingApproval(approval);
+    throw error;
+  }
 }
 
 async function rejectToolCall(approvalId: string): Promise<void> {
-  const approval = await db.pendingApprovals.get(approvalId);
+  const approval = await markPendingApprovalProcessing(approvalId);
+  await emitPendingApproval();
   if (!approval) {
-    throw new Error('Pending tool approval not found.');
+    return;
   }
 
   await continueAfterToolApproval(
@@ -390,7 +425,7 @@ async function rejectToolCall(approvalId: string): Promise<void> {
 }
 
 async function handleMessage(
-  port: browser.runtime.Port,
+  port: chrome.runtime.Port,
   message: UiToBackgroundMessage,
 ): Promise<void> {
   switch (message.type) {

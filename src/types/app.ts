@@ -109,6 +109,7 @@ export type PendingToolApprovalRecord = {
   toolName: string;
   namespacedName: string;
   argumentsJson: string;
+  status: 'pending' | 'processing';
   createdAt: string;
 };
 

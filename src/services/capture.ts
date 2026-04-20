@@ -19,7 +19,7 @@ function isCapturableUrl(url?: string): boolean {
   return /^https?:\/\//.test(url);
 }
 
-async function queryTabs(scope: CaptureScope): Promise<browser.tabs.Tab[]> {
+async function queryTabs(scope: CaptureScope): Promise<chrome.tabs.Tab[]> {
   if (scope === 'active-tab') {
     return browser.tabs.query({ active: true, currentWindow: true });
   }
@@ -44,7 +44,7 @@ function hashContent(value: string): string {
 
 function toStoredSnapshot(
   sessionId: string,
-  tab: browser.tabs.Tab,
+  tab: chrome.tabs.Tab,
   snapshot: BrowserPageSnapshot,
 ): PageSnapshotRecord {
   const content = snapshot.content.slice(0, MAX_PAGE_CONTENT);

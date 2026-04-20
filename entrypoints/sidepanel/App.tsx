@@ -57,7 +57,7 @@ function App() {
     setPendingApproval,
     setErrorMessage,
   } = useAppStore();
-  const portRef = useRef<browser.runtime.Port | null>(null);
+  const portRef = useRef<chrome.runtime.Port | null>(null);
   const selectedSessionIdRef = useRef<string | null>(selectedSessionId);
   const [draft, setDraft] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -170,6 +170,22 @@ function App() {
 
   function handleRefreshMcpStatuses() {
     send({ type: 'refresh-mcp-statuses' });
+  }
+
+  function handleToolApproval(decision: 'approve' | 'reject') {
+    if (!pendingApproval || pendingApproval.status === 'processing') {
+      return;
+    }
+
+    const approvalId = pendingApproval.id;
+    setPendingApproval({
+      ...pendingApproval,
+      status: 'processing',
+    });
+    send({
+      type: decision === 'approve' ? 'approve-tool-call' : 'reject-tool-call',
+      approvalId,
+    });
   }
 
   function handleSend() {
@@ -569,7 +585,7 @@ function App() {
         </section>
       ) : null}
 
-      {pendingApproval ? (
+      {pendingApproval?.status === 'pending' ? (
         <div className="approval-modal">
           <div className="approval-modal__card">
             <h2>Tool approval required</h2>
@@ -581,13 +597,10 @@ function App() {
             </p>
             <pre>{pendingApproval.argumentsJson}</pre>
             <div className="approval-modal__actions">
-              <button onClick={() => send({ type: 'reject-tool-call', approvalId: pendingApproval.id })}>
+              <button onClick={() => handleToolApproval('reject')}>
                 Reject
               </button>
-              <button
-                className="primary"
-                onClick={() => send({ type: 'approve-tool-call', approvalId: pendingApproval.id })}
-              >
+              <button className="primary" onClick={() => handleToolApproval('approve')}>
                 Approve
               </button>
             </div>
