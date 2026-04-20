@@ -443,9 +443,14 @@ function App() {
                 }))
               }
             >
-              <option value="session">Session only</option>
-              <option value="local">Persist locally</option>
+              <option value="session">Session only (clears when browser exits)</option>
+              <option value="local">Persist locally (stored on this device)</option>
             </select>
+            <small>
+              {editableSettings.llm.apiKeyStorageMode === 'session'
+                ? 'Keeps the API key for the current browser session. Closing the side panel will not clear it, but fully exiting the browser will.'
+                : 'Keeps the API key on this device until you change it, clear extension data, or remove the extension.'}
+            </small>
           </label>
 
           <label>

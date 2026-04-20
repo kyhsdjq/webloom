@@ -12,7 +12,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const SETTINGS_KEY = 'app-settings';
-let sessionApiKey = '';
+const SESSION_API_KEY = 'llm-session-api-key';
+
+async function loadSessionApiKey(): Promise<string> {
+  const result = await browser.storage.session.get(SESSION_API_KEY);
+  return (result[SESSION_API_KEY] as string | undefined) ?? '';
+}
+
+async function saveSessionApiKey(apiKey: string): Promise<void> {
+  if (apiKey) {
+    await browser.storage.session.set({ [SESSION_API_KEY]: apiKey });
+    return;
+  }
+
+  await browser.storage.session.remove(SESSION_API_KEY);
+}
 
 export async function loadSettings(): Promise<AppSettings> {
   const result = await browser.storage.local.get(SETTINGS_KEY);
@@ -29,7 +43,7 @@ export async function loadSettings(): Promise<AppSettings> {
   };
 
   if (merged.llm.apiKeyStorageMode === 'session') {
-    merged.llm.apiKey = sessionApiKey;
+    merged.llm.apiKey = await loadSessionApiKey();
   }
 
   return merged;
@@ -39,10 +53,10 @@ export async function saveSettings(settings: AppSettings): Promise<AppSettings> 
   const normalized: AppSettings = structuredClone(settings);
 
   if (normalized.llm.apiKeyStorageMode === 'session') {
-    sessionApiKey = normalized.llm.apiKey;
+    await saveSessionApiKey(normalized.llm.apiKey);
     normalized.llm.apiKey = '';
   } else {
-    sessionApiKey = '';
+    await saveSessionApiKey('');
   }
 
   await browser.storage.local.set({
