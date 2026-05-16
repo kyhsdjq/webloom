@@ -1,6 +1,7 @@
 import type { AppSettings } from '@/src/types/app';
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  themeMode: 'night',
   captureScope: 'active-tab',
   llm: {
     baseUrl: 'https://api.openai.com/v1',
@@ -35,6 +36,7 @@ export async function loadSettings(): Promise<AppSettings> {
   const merged: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...stored,
+    themeMode: stored?.themeMode ?? DEFAULT_SETTINGS.themeMode,
     llm: {
       ...DEFAULT_SETTINGS.llm,
       ...stored?.llm,

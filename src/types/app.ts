@@ -2,6 +2,8 @@ export type CaptureScope = 'active-tab' | 'current-window' | 'all-tabs';
 
 export type ApiKeyStorageMode = 'session' | 'local';
 
+export type ThemeMode = 'day' | 'night';
+
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
 export type MessageStatus = 'pending' | 'streaming' | 'done' | 'error';
@@ -94,6 +96,7 @@ export type LlmConfig = {
 };
 
 export type AppSettings = {
+  themeMode: ThemeMode;
   captureScope: CaptureScope;
   llm: LlmConfig;
   mcpServers: McpServerConfig[];

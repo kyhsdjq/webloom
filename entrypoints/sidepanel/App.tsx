@@ -132,6 +132,15 @@ function App() {
     () => messages.some((message) => message.status === 'streaming'),
     [messages],
   );
+  const activeThemeMode = isSettingsOpen ? editableSettings.themeMode : settings.themeMode;
+
+  useEffect(() => {
+    document.documentElement.dataset.themeMode = activeThemeMode;
+
+    return () => {
+      delete document.documentElement.dataset.themeMode;
+    };
+  }, [activeThemeMode]);
 
   function send(message: UiToBackgroundMessage) {
     portRef.current?.postMessage(message);
@@ -244,7 +253,7 @@ function App() {
   }
 
   return (
-    <div className="shell">
+    <div className={`shell shell--${activeThemeMode}`}>
       <aside className="sidebar">
         <div className="sidebar__header">
           <h1>WebLoom</h1>
@@ -388,6 +397,22 @@ function App() {
             <h2>Settings</h2>
             <button onClick={() => setIsSettingsOpen(false)}>Close</button>
           </div>
+
+          <label>
+            Theme
+            <select
+              value={editableSettings.themeMode}
+              onChange={(event) =>
+                setEditableSettings((current) => ({
+                  ...current,
+                  themeMode: event.target.value as AppSettings['themeMode'],
+                }))
+              }
+            >
+              <option value="day">Day mode (white theme)</option>
+              <option value="night">Night mode (black theme)</option>
+            </select>
+          </label>
 
           <label>
             Base URL
